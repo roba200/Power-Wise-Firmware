@@ -28,11 +28,15 @@ String DEVICE_ID = "vwcBliq4fCGSPyn9uaPQ";
 #define ROOM3_RELAY 14
 #define ROOM4_RELAY 15
 
+#define WIFI_RESET_BTN 32
+#define SENSOR_CALIBRATION_PIN 5
+
 #define SENSITIVITY 500.0f
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_ADS1015 ads;
 ZMPT101B voltageSensor(33, 50.0);
+WiFiManager wifiManager;
 
 FirebaseData fbdo;
 FirebaseAuth auth;
@@ -88,11 +92,12 @@ String getADC(int n)
   return (String)ads.readADC_SingleEnded(n);
 }
 
-void sensorCalibrateDisplay() {
-    display.clearDisplay();
-    display.setCursor(2, 28);
-    display.println("Sensor Calibrating...");
-    display.display();
+void sensorCalibrateDisplay()
+{
+  display.clearDisplay();
+  display.setCursor(2, 28);
+  display.println("Sensor Calibrating...");
+  display.display();
 }
 
 void updateDisplay()
@@ -107,11 +112,11 @@ void updateDisplay()
   display.println("V");
   display.setCursor(25, 27);
   display.print("Current:");
-  display.print(room1_current+room2_current+room3_current+room4_current);
+  display.print(room1_current + room2_current + room3_current + room4_current);
   display.println("A");
   display.setCursor(25, 38);
   display.print("Power:");
-  display.print(voltage * (room1_current+room2_current+room3_current+room4_current));
+  display.print(voltage * (room1_current + room2_current + room3_current + room4_current));
   display.println("Kw");
   display.display();
   display.clearDisplay();
@@ -475,8 +480,8 @@ void loop2(void *pvParameters)
 void setup()
 {
   Serial.begin(115200);
-  WiFi.setTxPower(WIFI_POWER_MINUS_1dBm);
-
+  pinMode(WIFI_RESET_BTN, INPUT_PULLUP);
+  pinMode(SENSOR_CALIBRATION_PIN, INPUT_PULLUP);
   pinMode(ROOM1_RELAY, OUTPUT);
   pinMode(ROOM2_RELAY, OUTPUT);
   pinMode(ROOM3_RELAY, OUTPUT);
@@ -491,7 +496,6 @@ void setup()
   display.clearDisplay();
   display.display();
 
-  WiFiManager wifiManager;
   wifiManager.setAPCallback(configModeCallback);
 
   if (!wifiManager.autoConnect("PowerWise"))
@@ -537,8 +541,6 @@ void setup()
       NULL,    // Task handle.
       0        // Core where the task should run
   );
-
-  // wifiManager.resetSettings();
 }
 
 void loop()
@@ -557,6 +559,21 @@ void loop()
   {
     sendDataPrevMillis = millis();
     updateRoomData();
+  }
+
+  if (digitalRead(WIFI_RESET_BTN) == LOW)
+  {
+    wifiManager.resetSettings();
+    ESP.restart();
+  }
+
+  if (digitalRead(SENSOR_CALIBRATION_PIN) == LOW)
+  {
+    sensorCalibrateDisplay();
+    offset1 = autoCalibrate(0);
+    offset2 = autoCalibrate(1);
+    offset3 = autoCalibrate(2);
+    offset4 = autoCalibrate(3);
   }
 
   autoCuttOff();
