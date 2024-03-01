@@ -88,43 +88,46 @@ String getADC(int n)
   return (String)ads.readADC_SingleEnded(n);
 }
 
+void sensorCalibrateDisplay() {
+    display.clearDisplay();
+    display.setCursor(2, 28);
+    display.println("Sensor Calibrating...");
+    display.display();
+}
+
 void updateDisplay()
 {
 
   // Serial.println(energy,10);
-  display.setCursor(45, 4);
-  display.println("ROOM 1");
+  display.setCursor(5, 4);
+  display.println("Live Power Metrics");
   display.setCursor(19, 16);
   display.print("Voltage:");
   display.print(voltage);
   display.println("V");
   display.setCursor(25, 27);
   display.print("Current:");
-  display.print(room1_current);
+  display.print(room1_current+room2_current+room3_current+room4_current);
   display.println("A");
   display.setCursor(25, 38);
   display.print("Power:");
-  display.print(voltage * room1_current);
-  display.println("w");
-  display.setCursor(25, 49);
-  display.print("Energy:");
-  display.print(room1_energy);
-  display.println("wh");
+  display.print(voltage * (room1_current+room2_current+room3_current+room4_current));
+  display.println("Kw");
   display.display();
   display.clearDisplay();
 }
 
-float autoCalibrate(byte channel)
+int autoCalibrate(byte channel)
 { // required time, around 1 ms
   int _adc = 0, _sample = 0;
   int offset = 0;
-  while (_sample < 10)
+  for (int i = 0; i < 20; i++)
   {
     _adc += ads.readADC_SingleEnded(channel);
     _sample++;
   }
 
-  offset = float(_adc) * 0.1; // average of 10 samples
+  offset = _adc / 20.00; // average of 100 samples
   return offset;
 }
 
@@ -416,21 +419,64 @@ void configModeCallback(WiFiManager *myWiFiManager)
 
 void loop2(void *pvParameters)
 {
+  sensorCalibrateDisplay();
+  offset1 = autoCalibrate(0);
+  offset2 = autoCalibrate(1);
+  offset3 = autoCalibrate(2);
+  offset4 = autoCalibrate(3);
 
   while (1)
   {
-    float room_current = getAC(1, 50, 20, 0.09, offset2);
+    float current1 = getAC(0, 50, 20, 0.09, offset1);
+    float current2 = getAC(1, 50, 20, 0.09, offset2);
+    float current3 = getAC(2, 50, 20, 0.09, offset3);
+    float current4 = getAC(3, 50, 20, 0.09, offset4);
 
-    if (room_current < 0)
+    if (current1 < 0.1)
     {
-      room_current = 0;
+      room1_current = 0;
     }
-    Serial.println(room_current);
+    else
+    {
+      room1_current = current1;
+    }
+    if (current2 < 0.1)
+    {
+      room2_current = 0;
+    }
+    else
+    {
+      room2_current = current2;
+    }
+    if (current3 < 0.1)
+    {
+      room3_current = 0;
+    }
+    else
+    {
+      room3_current = current3;
+    }
+    if (current4 < 0.1)
+    {
+      room4_current = 0;
+    }
+    else
+    {
+      room4_current = current4;
+    }
+
+    Serial.println(room1_current);
+
+    // Serial.println(getADC(1));
+    // delay(100);
   }
 }
 
 void setup()
 {
+  Serial.begin(115200);
+  WiFi.setTxPower(WIFI_POWER_MINUS_1dBm);
+
   pinMode(ROOM1_RELAY, OUTPUT);
   pinMode(ROOM2_RELAY, OUTPUT);
   pinMode(ROOM3_RELAY, OUTPUT);
@@ -439,10 +485,6 @@ void setup()
   ads.setGain(GAIN_ONE);
   ads.begin();
 
-  offset2 = autoCalibrate(1);
- 
-
-  Serial.begin(115200);
   voltageSensor.setSensitivity(SENSITIVITY);
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
   display.setTextColor(SSD1306_WHITE);
@@ -459,6 +501,7 @@ void setup()
 
   if (WiFi.status() == WL_CONNECTED)
   {
+
     displayConnected();
     config.api_key = API_KEY;
     auth.user.email = USER_EMAIL;
