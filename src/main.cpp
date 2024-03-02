@@ -1,3 +1,4 @@
+//import neccessary libraries
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -9,89 +10,94 @@
 #include "addons/RTDBHelper.h"
 #include <ZMPT101B.h>
 
+//Set device ID here
 String DEVICE_ID = "vwcBliq4fCGSPyn9uaPQ";
 
+//Firebase API_KEY
 #define API_KEY "AIzaSyA31Jxretax4diOiDKizzVU-ck5Df5jf3g"
+//Firebase RTDB URL
 #define DATABASE_URL "powerwise00-default-rtdb.europe-west1.firebasedatabase.app"
 
+//Authentication via email and password for additional security
 #define USER_EMAIL "aryantfk5@gmail.com"
 #define USER_PASSWORD "zxcvbnm123"
 
+//display dimentions of OLED display
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
+//This is set to -1 because we use a OLED display without a reset pin
 #define OLED_RESET -1
+
+//I2C address of OLED display
 #define SCREEN_ADDRESS 0x3C
 
+//Assingn Pins for room's relay
 #define ROOM1_RELAY 12
 #define ROOM2_RELAY 13
 #define ROOM3_RELAY 14
 #define ROOM4_RELAY 15
 
+//Assign buttons for Wifi reset and sensor calibration
 #define WIFI_RESET_BTN 32
 #define SENSOR_CALIBRATION_PIN 5
 
+//Sensitivity of the ZMPT101b Voltage sensor
 #define SENSITIVITY 500.0f
 
+//Instances for libraries
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_ADS1015 ads;
 ZMPT101B voltageSensor(33, 50.0);
 WiFiManager wifiManager;
 
+//Objects for firebase
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 FirebaseData stream;
 
+//store the previous miliseconds for frequently update the data to RTDB
 unsigned long sendDataPrevMillis = 0;
+//time intervel for update the database
 uint32_t idleTimeForStream = 1000;
 
+//variables for store measuresd values
 float voltage = 0;
 
 float room1_current = 0;
 float room1_power = 0;
-float room1_energy = 0;
 float room1_threshold = 0;
 int room1_relay = 0;
 
 float room2_current = 0;
 float room2_power = 0;
-float room2_energy = 0;
 float room2_threshold = 0;
 int room2_relay = 0;
 
 float room3_current = 0;
 float room3_power = 0;
-float room3_energy = 0;
 float room3_threshold = 0;
 int room3_relay = 0;
 
 float room4_current = 0;
 float room4_power = 0;
-float room4_energy = 0;
 float room4_threshold = 0;
 int room4_relay = 0;
 
-float room1_cal_volt = 0;
-float room2_cal_volt = 0;
-float room3_cal_volt = 0;
-float room4_cal_volt = 0;
-
 volatile bool dataChanged = false;
 
+//variables for store offsets for each current sensors
 int offset1 = 0;
 int offset2 = 0;
 int offset3 = 0;
 int offset4 = 0;
 
+//paths for data streams
 String parentPath = "/" + DEVICE_ID;
 String childPath[8] = {"/room1_relay", "/room1_threshold", "/room2_relay", "/room2_threshold", "/room3_relay", "/room3_threshold", "/room4_relay", "/room4_threshold"};
 
-String getADC(int n)
-{
-  return (String)ads.readADC_SingleEnded(n);
-}
-
+//Display Calibration 
 void sensorCalibrateDisplay()
 {
   display.clearDisplay();
@@ -100,10 +106,9 @@ void sensorCalibrateDisplay()
   display.display();
 }
 
+//Update the display frequently with sensor values
 void updateDisplay()
 {
-
-  // Serial.println(energy,10);
   display.setCursor(5, 4);
   display.println("Live Power Metrics");
   display.setCursor(19, 16);
@@ -122,6 +127,66 @@ void updateDisplay()
   display.clearDisplay();
 }
 
+// Display the config mode
+void displayConfigMode()
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(30, 4);
+  display.println(F("CONFIG MODE"));
+  display.setCursor(18, 17);
+  display.println(F("Connect to WIFI"));
+  display.setCursor(13, 30);
+  display.println(F("PowerWise & Go to"));
+  display.setCursor(11, 44);
+  display.print(F("http://"));
+  display.println(WiFi.softAPIP());
+  display.display();
+}
+
+//Display if the network is not connected
+void displayfailedConnect()
+{
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println(F("Failed to connect"));
+  display.display();
+  Serial.println("failed to connect and hit timeout");
+  ESP.restart();
+  delay(1000);
+}
+
+//Display if the network is connected
+void displayConnected()
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(38, 4);
+  display.println("WOO HAA!");
+  display.setCursor(25, 24);
+  display.println("Connected to:");
+  String line = WiFi.SSID();
+  int x = (display.width() - (line.length() * 6)) / 2;
+  display.setCursor(x, 35);
+  display.println(line);
+  display.display();
+}
+
+//Display if the network is not connected with the esp restart
+void displayNotConnected()
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Not connected");
+  display.display();
+}
+
+//calibration of Current sensors
 int autoCalibrate(byte channel)
 { // required time, around 1 ms
   int _adc = 0, _sample = 0;
@@ -162,6 +227,7 @@ float getAC(byte channel, float _freq, float _n_total_period, float results_adju
   return _rms_current;
 }
 
+//auto cutoff method
 void autoCuttOff()
 {
   if (room1_relay == 1)
@@ -233,6 +299,7 @@ void autoCuttOff()
   }
 }
 
+//Callback function to check the data stream is timedout
 void streamTimeoutCallback(bool timeout)
 {
   if (timeout)
@@ -242,6 +309,14 @@ void streamTimeoutCallback(bool timeout)
     Serial.printf("error code: %d, reason: %s\n\n", stream.httpCode(), stream.errorReason().c_str());
 }
 
+//Callback for config Mode
+void configModeCallback(WiFiManager *myWiFiManager)
+{
+  displayConfigMode();
+}
+
+
+//Callback function for stream(this is called when a Data in RTDB is changed)
 void streamCallback(MultiPathStream stream)
 {
   size_t numChild = sizeof(childPath) / sizeof(childPath[0]);
@@ -334,6 +409,7 @@ void streamCallback(MultiPathStream stream)
   dataChanged = true;
 }
 
+//Update the each room data to RTDB
 void updateRoomData()
 {
   FirebaseJson json;
@@ -345,83 +421,24 @@ void updateRoomData()
 
   json.add("room1_current", room1_current);
   json.add("room1_power", voltage * room1_current);
-  json.add("room1_energy", room1_energy);
+  
 
   json.add("room2_current", room2_current);
   json.add("room2_power", voltage * room2_current);
-  json.add("room2_energy", room2_energy);
+  
 
   json.add("room3_current", room3_current);
   json.add("room3_power", voltage * room3_current);
-  json.add("room3_energy", room3_energy);
+
 
   json.add("room4_current", room4_current);
   json.add("room4_power", voltage * room4_current);
-  json.add("room4_energy", room4_energy);
+
 
   Firebase.RTDB.updateNodeSilentAsync(&fbdo, DEVICE_ID, &json);
 }
 
-void displayConfigMode()
-{
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(30, 4);
-  display.println(F("CONFIG MODE"));
-  display.setCursor(18, 17);
-  display.println(F("Connect to WIFI"));
-  display.setCursor(13, 30);
-  display.println(F("PowerWise & Go to"));
-  display.setCursor(11, 44);
-  display.print(F("http://"));
-  display.println(WiFi.softAPIP());
-  display.display();
-}
-
-void displayfailedConnect()
-{
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println(F("Failed to connect"));
-  display.display();
-  Serial.println("failed to connect and hit timeout");
-  ESP.restart();
-  delay(1000);
-}
-
-void displayConnected()
-{
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(38, 4);
-  display.println("WOO HAA!");
-  display.setCursor(25, 24);
-  display.println("Connected to:");
-  String line = WiFi.SSID();
-  int x = (display.width() - (line.length() * 6)) / 2;
-  display.setCursor(x, 35);
-  display.println(line);
-  display.display();
-}
-
-void displayNotConnected()
-{
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println("Not connected");
-  display.display();
-}
-
-void configModeCallback(WiFiManager *myWiFiManager)
-{
-  displayConfigMode();
-}
-
+//Second loop (Use core 0 in esp32)
 void loop2(void *pvParameters)
 {
   sensorCalibrateDisplay();
@@ -436,6 +453,8 @@ void loop2(void *pvParameters)
     float current2 = getAC(1, 50, 20, 0.09, offset2);
     float current3 = getAC(2, 50, 20, 0.09, offset3);
     float current4 = getAC(3, 50, 20, 0.09, offset4);
+
+    //Remove unstable values of sensors(ACS712 can't measure current accurately below 0.1A)
 
     if (current1 < 0.1)
     {
@@ -471,9 +490,6 @@ void loop2(void *pvParameters)
     }
 
     Serial.println(room1_current);
-
-    // Serial.println(getADC(1));
-    // delay(100);
   }
 }
 
@@ -532,6 +548,7 @@ void setup()
     displayNotConnected();
   }
 
+  //Pin to the task for Core 0 in esp32
   xTaskCreatePinnedToCore(
       loop2,   // Function to implement the task
       "loop2", // Name of the task
@@ -545,28 +562,28 @@ void setup()
 
 void loop()
 {
-  // room1_current = getAC(0, 50, 20, 0.09, offset1) - 0.15;
-
-  // room3_current = getAC(2, 50, 20, 0.09, offset3) - 0.15;
-  // room4_current = getAC(3, 50, 20, 0.09, offset4) - 0.15;
-
+  //check whether the data in RTDB changed
   if (dataChanged)
   {
     dataChanged = false;
   }
 
+  //update the room data to RTDB at relevent frequency
   if (Firebase.ready() && (millis() - sendDataPrevMillis > idleTimeForStream || sendDataPrevMillis == 0))
   {
     sendDataPrevMillis = millis();
     updateRoomData();
   }
 
+  //Note: first we use Input interupts for this. but when we uses both cores in esp32 that method not worked properly 
+  //Check the Wifi reset button is pressed
   if (digitalRead(WIFI_RESET_BTN) == LOW)
   {
     wifiManager.resetSettings();
     ESP.restart();
   }
 
+  //Check the Wifi Sensor calibration button is pressed
   if (digitalRead(SENSOR_CALIBRATION_PIN) == LOW)
   {
     sensorCalibrateDisplay();
