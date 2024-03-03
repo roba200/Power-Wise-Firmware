@@ -59,7 +59,7 @@ FirebaseData stream;
 
 // store the previous miliseconds for frequently update the data to RTDB
 unsigned long sendDataPrevMillis = 0;
-// time intervel for update the database
+// time intervel for update the database(ms)
 uint32_t idleTimeForStream = 1000;
 
 // variables for store measuresd values
